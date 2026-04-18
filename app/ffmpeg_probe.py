@@ -56,6 +56,22 @@ def resolved_binary(name: str) -> str | None:
     return os.environ.get(env_name) or shutil.which(name)
 
 
+def conda_prefix() -> Path | None:
+    value = os.environ.get("CONDA_PREFIX")
+    if not value:
+        return None
+    return Path(value)
+
+
+def legacy_base_binary(tool: str, prefix: Path | None) -> Path | None:
+    if prefix is None:
+        return None
+    filename = f"{tool}.exe" if PLATFORM_KEY == "win32" else tool
+    if PLATFORM_KEY == "win32":
+        return prefix / "Library" / "bin" / filename
+    return prefix / "bin" / filename
+
+
 def ffmpeg_prefix(ffmpeg_path: str | None) -> Path | None:
     if not ffmpeg_path:
         return None
@@ -162,6 +178,9 @@ def split_path(value: str | None) -> list[str]:
 def collect_state() -> dict:
     ffmpeg_path = resolved_binary("ffmpeg")
     ffprobe_path = resolved_binary("ffprobe")
+    base_prefix = conda_prefix()
+    legacy_ffmpeg = legacy_base_binary("ffmpeg", base_prefix)
+    legacy_ffprobe = legacy_base_binary("ffprobe", base_prefix)
     prefix = ffmpeg_prefix(ffmpeg_path)
     lib_dir = shared_lib_dir(prefix)
     runtime_dir = runtime_lib_dir()
@@ -198,11 +217,16 @@ def collect_state() -> dict:
         "executable": sys.executable,
         "prefix": sys.prefix,
         "base_prefix": sys.base_prefix,
+        "conda_prefix": str(base_prefix) if base_prefix else None,
         "runtime_lib_dir": str(runtime_dir),
         "ffmpeg_path_env": os.environ.get("FFMPEG_PATH"),
         "ffprobe_path_env": os.environ.get("FFPROBE_PATH"),
         "which_ffmpeg": shutil.which("ffmpeg"),
         "which_ffprobe": shutil.which("ffprobe"),
+        "legacy_base_ffmpeg": str(legacy_ffmpeg) if legacy_ffmpeg else None,
+        "legacy_base_ffmpeg_exists": bool(legacy_ffmpeg and legacy_ffmpeg.exists()),
+        "legacy_base_ffprobe": str(legacy_ffprobe) if legacy_ffprobe else None,
+        "legacy_base_ffprobe_exists": bool(legacy_ffprobe and legacy_ffprobe.exists()),
         "ffmpeg_prefix": str(prefix) if prefix else None,
         "shared_lib_dir": str(lib_dir) if lib_dir else None,
         "path_entries": split_path(os.environ.get("PATH"))[:8],
@@ -220,8 +244,20 @@ def resolved_binaries_match(state: dict) -> bool:
     return ffmpeg_ok and ffprobe_ok
 
 
+def legacy_base_shadowed(state: dict) -> bool:
+    if state["legacy_base_ffmpeg_exists"]:
+        if normalize_path(state["which_ffmpeg"]) == normalize_path(state["legacy_base_ffmpeg"]):
+            return False
+    if state["legacy_base_ffprobe_exists"]:
+        if normalize_path(state["which_ffprobe"]) == normalize_path(state["legacy_base_ffprobe"]):
+            return False
+    return True
+
+
 def libraries_ready(state: dict) -> bool:
     if not resolved_binaries_match(state):
+        return False
+    if not legacy_base_shadowed(state):
         return False
     if not state["ffmpeg_version"] or not state["ffprobe_version"] or not state["has_libmp3lame"]:
         return False
@@ -241,11 +277,15 @@ def print_state(state: dict) -> None:
     print(f"python: {state['python']}")
     print(f"executable: {state['executable']}")
     print(f"base_prefix: {state['base_prefix']}")
+    print(f"conda_prefix: {state['conda_prefix']}")
     print(f"runtime_lib_dir: {state['runtime_lib_dir']}")
     print(f"ffmpeg_path_env: {state['ffmpeg_path_env']}")
     print(f"ffprobe_path_env: {state['ffprobe_path_env']}")
     print(f"which_ffmpeg: {state['which_ffmpeg']}")
     print(f"which_ffprobe: {state['which_ffprobe']}")
+    print(f"legacy_base_ffmpeg: {state['legacy_base_ffmpeg']} exists={state['legacy_base_ffmpeg_exists']}")
+    print(f"legacy_base_ffprobe: {state['legacy_base_ffprobe']} exists={state['legacy_base_ffprobe_exists']}")
+    print(f"legacy_base_shadowed: {legacy_base_shadowed(state)}")
     print(f"ffmpeg_prefix: {state['ffmpeg_prefix']}")
     print(f"shared_lib_dir: {state['shared_lib_dir']}")
     print("")
