@@ -1,7 +1,7 @@
 module.exports = {
   version: "7.0",
-  title: "FFmpeg UV Test",
-  description: "Minimal launcher to verify macOS uv-runtime FFmpeg dylib exposure.",
+  title: "FFmpeg Runtime Test",
+  description: "Minimal launcher to verify Pinokio FFmpeg runtime exposure on macOS, Linux, and Windows.",
   menu: async (kernel, info) => {
     const installed = info.exists("app/env")
     const running = {
