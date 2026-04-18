@@ -263,14 +263,20 @@ def print_state(state: dict) -> None:
         runtime_suffix = ""
         if item["runtime_is_symlink"] and item["runtime_symlink_target"]:
             runtime_suffix = f" -> {item['runtime_symlink_target']}"
+        runtime_note = ""
+        if PLATFORM_KEY == "win32" and not item["runtime_exists"]:
+            runtime_note = " (expected on Windows)"
         print(
             f"  - {item['component']}: name={item['name']} shared_exists={item['shared_exists']} "
-            f"runtime_exists={item['runtime_exists']} runtime_symlink={item['runtime_is_symlink']}{runtime_suffix}"
+            f"runtime_exists={item['runtime_exists']}{runtime_note} runtime_symlink={item['runtime_is_symlink']}{runtime_suffix}"
         )
     print("")
     print("load_checks:")
     for item in state["libraries"]:
-        by_name = "ok" if item["load_by_name"] else f"failed: {item['load_by_name_error']}"
+        if PLATFORM_KEY == "win32":
+            by_name = "not required on Windows"
+        else:
+            by_name = "ok" if item["load_by_name"] else f"failed: {item['load_by_name_error']}"
         by_path = "ok" if item["load_by_path"] else f"failed: {item['load_by_path_error']}"
         print(f"  - {item['name']}: by_name={by_name} by_path={by_path}")
     print("")
