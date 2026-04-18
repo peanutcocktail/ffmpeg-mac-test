@@ -119,6 +119,16 @@ def load_by_name(name: str | None) -> dict:
         return {"name": name, "load_by_name": False, "error": str(exc)}
 
 
+def load_by_path(path: str | None) -> dict:
+    if not path:
+        return {"path": None, "load_by_path": False, "error": "library path not found"}
+    try:
+        ctypes.CDLL(path)
+        return {"path": path, "load_by_path": True}
+    except OSError as exc:
+        return {"path": path, "load_by_path": False, "error": str(exc)}
+
+
 def run_command(command: list[str]) -> dict:
     try:
         completed = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -160,7 +170,8 @@ def collect_state() -> dict:
     for component, pattern in LIBRARY_PATTERNS[PLATFORM_KEY].items():
         shared_path = choose_library(lib_dir, pattern)
         runtime_state = runtime_entry_state(runtime_dir, shared_path.name if shared_path else None)
-        load_state = load_by_name(shared_path.name if shared_path else None)
+        name_load_state = load_by_name(shared_path.name if shared_path else None)
+        path_load_state = load_by_path(str(shared_path) if shared_path else None)
         libraries.append({
             "component": component,
             "name": shared_path.name if shared_path else None,
@@ -170,8 +181,10 @@ def collect_state() -> dict:
             "runtime_exists": runtime_state["exists"],
             "runtime_is_symlink": runtime_state["is_symlink"],
             "runtime_symlink_target": runtime_state["symlink_target"],
-            "load_by_name": load_state["load_by_name"],
-            "load_error": load_state.get("error"),
+            "load_by_name": name_load_state["load_by_name"],
+            "load_by_name_error": name_load_state.get("error"),
+            "load_by_path": path_load_state["load_by_path"],
+            "load_by_path_error": path_load_state.get("error"),
         })
 
     ffmpeg_version = run_command(["ffmpeg", "-hide_banner", "-version"])
@@ -212,7 +225,11 @@ def libraries_ready(state: dict) -> bool:
         return False
     if not state["ffmpeg_version"] or not state["ffprobe_version"] or not state["has_libmp3lame"]:
         return False
-    if not all(item["shared_exists"] and item["load_by_name"] for item in state["libraries"]):
+    if not all(item["shared_exists"] for item in state["libraries"]):
+        return False
+    if PLATFORM_KEY == "win32":
+        return all(item["load_by_path"] for item in state["libraries"])
+    if not all(item["load_by_name"] for item in state["libraries"]):
         return False
     if PLATFORM_KEY == "darwin":
         return all(item["runtime_exists"] for item in state["libraries"])
@@ -251,12 +268,11 @@ def print_state(state: dict) -> None:
             f"runtime_exists={item['runtime_exists']} runtime_symlink={item['runtime_is_symlink']}{runtime_suffix}"
         )
     print("")
-    print("load_by_name:")
+    print("load_checks:")
     for item in state["libraries"]:
-        if item["load_by_name"]:
-            print(f"  - {item['name']}: ok")
-        else:
-            print(f"  - {item['name']}: failed: {item['load_error']}")
+        by_name = "ok" if item["load_by_name"] else f"failed: {item['load_by_name_error']}"
+        by_path = "ok" if item["load_by_path"] else f"failed: {item['load_by_path_error']}"
+        print(f"  - {item['name']}: by_name={by_name} by_path={by_path}")
     print("")
     print(f"ffmpeg_version: {state['ffmpeg_version']}")
     print(f"ffprobe_version: {state['ffprobe_version']}")
